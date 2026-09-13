@@ -12,7 +12,7 @@ on:
 jobs:
   deploy-rdp:
     runs-on: windows-latest
-    timeout-minutes: 360
+    timeout-minutes: 360 # Tempo máximo de duração do PC Virtual (6 horas)
     
     steps:
     - name: Checkout Repository
@@ -86,3 +86,20 @@ jobs:
         $installerPath = "$env:TEMP\7z-installer.exe"
         Invoke-WebRequest -Uri $zipUrl -OutFile $installerPath
         Write-Host "Installing 7-Zip silently..." -ForegroundColor Green
+        Start-Process -FilePath $installerPath -ArgumentList "/S" -Wait
+        Remove-Item $installerPath -Force
+        Write-Host "7-Zip installed!" -ForegroundColor Green
+
+    - name: Keep Alive (Manter PC Ligado)
+      run: |
+        Write-Host "=== PC VIRTUAL ATIVO E PRONTO ===" -ForegroundColor Green
+        Write-Host "Conecte usando o IP: $env:TAILSCALE_IP" -ForegroundColor Cyan
+        Write-Host "Aguardando conexões (este processo rodará por até 6 horas)..." -ForegroundColor Yellow
+        
+        $timeout = 21600 # 6 horas em segundos
+        $elapsed = 0
+        while ($elapsed -lt $timeout) {
+            Start-Sleep -Seconds 60
+            $elapsed += 60
+        }
+        
