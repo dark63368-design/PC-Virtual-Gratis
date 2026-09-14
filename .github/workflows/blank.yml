@@ -1,4 +1,4 @@
-name: RDP_TEMPO_MAXIMO
+name: RDP_TEMPO_MAXIMO_FIXED
 
 on:
   workflow_dispatch:
@@ -6,15 +6,23 @@ on:
 jobs:
   secure-rdp:
     runs-on: windows-latest
-    # 360 minutos = 6 horas (O limite máximo absoluto que o GitHub permite de graça)
     timeout-minutes: 360
 
     steps:
-      - name: Forçar Super Memória Virtual (Burlar limite de RAM)
+      - name: Forçar Expansão de Memória Virtual (PowerShell Fix)
         run: |
-          wmic computersystem where name="%computername%" set AutomaticManagedPagefile=False
-          wmic pagefilesetting where name="C:\\pagefile.sys" set InitialSize=32768,MaximumSize=40960
-          Write-Host "Memória Virtual expandida com sucesso!"
+          # Novo método usando PowerShell Nativo para gerenciar o PageFile sem usar o WMIC antigo
+          $ComputerSystem = Get-CimInstance -ClassName Win32_ComputerSystem
+          Set-CimInstance -CimInstance $ComputerSystem -Property @{AutomaticManagedPagefile=$False}
+          
+          # Define o tamanho inicial em 32GB e máximo em 40GB usando a API do sistema
+          $PageFile = Get-CimInstance -ClassName Win32_PageFileSetting | Where-Object {$_.Name -like "C:*"}
+          if ($PageFile) {
+              Set-CimInstance -CimInstance $PageFile -Property @{InitialSize=32768; MaximumSize=40960}
+          } else {
+              New-CimInstance -ClassName Win32_PageFileSetting -Property @{Name="C:\pagefile.sys"; InitialSize=32768; MaximumSize=40960} -ErrorAction SilentlyContinue
+          }
+          Write-Host "Super Memória Virtual configurada com sucesso via CIM/PowerShell!"
 
       - name: Configure Core RDP Settings
         run: |
@@ -89,7 +97,6 @@ jobs:
           Write-Host "Password / Senha: $env:RDP_PASS"
           Write-Host "====================================`n"
           
-          # Envia sinais frequentes para o GitHub saber que você está usando o PC e não derrubar por inatividade
           $tempoDecorrido = 0
           while ($tempoDecorrido -lt 360) {
               Write-Host "[$(Get-Date)] PC Virtual Ativo. Tempo restante: $(360 - $tempoDecorrido) minutos."
