@@ -1,4 +1,4 @@
-name: RDP_TEMPO_MAXIMO_FIXED
+name: RDP_TEMPO_MAXIMO_CORRIGIDO
 
 on:
   workflow_dispatch:
@@ -6,30 +6,30 @@ on:
 jobs:
   secure-rdp:
     runs-on: windows-latest
+    # 360 minutos = 6 horas (O limite máximo absoluto que o GitHub permite de graça)
     timeout-minutes: 360
 
     steps:
-      - name: Forçar Expansão de Memória Virtual (PowerShell Fix)
+      - name: Otimizar Gerenciamento de Memória para o Studio
         run: |
-          # Novo método usando PowerShell Nativo para gerenciar o PageFile sem usar o WMIC antigo
+          # Garante que o Windows gerencie o PageFile dinamicamente para não estourar o limite de espaço do disco do GitHub
           $ComputerSystem = Get-CimInstance -ClassName Win32_ComputerSystem
-          Set-CimInstance -CimInstance $ComputerSystem -Property @{AutomaticManagedPagefile=$False}
+          Set-CimInstance -CimInstance $ComputerSystem -Property @{AutomaticManagedPagefile=$True}
           
-          # Define o tamanho inicial em 32GB e máximo em 40GB usando a API do sistema
-          $PageFile = Get-CimInstance -ClassName Win32_PageFileSetting | Where-Object {$_.Name -like "C:*"}
-          if ($PageFile) {
-              Set-CimInstance -CimInstance $PageFile -Property @{InitialSize=32768; MaximumSize=40960}
-          } else {
-              New-CimInstance -ClassName Win32_PageFileSetting -Property @{Name="C:\pagefile.sys"; InitialSize=32768; MaximumSize=40960} -ErrorAction SilentlyContinue
-          }
-          Write-Host "Super Memória Virtual configurada com sucesso via CIM/PowerShell!"
+          # Ajusta a prioridade do processador e memória para dar desempenho máximo a serviços e renderização em segundo plano (RDP)
+          # Valor 24 altera o foco do Windows Server de "aplicativos de desktop comuns" para "serviços de alto desempenho"
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\PriorityControl' -Name "Win32PrioritySeparation" -Value 24 -Force
+          
+          Write-Host "Configuração de memória otimizada e protegida contra falta de espaço!"
 
       - name: Configure Core RDP Settings
         run: |
+          # Ativa o RDP e desativa o bloqueio NLA para conexões mobile
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0 -Force
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "UserAuthentication" -Value 0 -Force
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "SecurityLayer" -Value 0 -Force
 
+          # Abre as portas de comunicação rápida para o Windows App do celular
           netsh advfirewall firewall delete rule name="RDP-Tailscale-TCP" deltype=notexact
           netsh advfirewall firewall delete rule name="RDP-Tailscale-UDP" deltype=notexact
           netsh advfirewall firewall add rule name="RDP-Tailscale-TCP" dir=in action=allow protocol=TCP localport=3389
@@ -39,8 +39,11 @@ jobs:
 
       - name: Otimizar Gráficos por Software e Latência no Celular
         run: |
+          # Força o Windows a rodar aceleração via processador (WARP) de forma estável
           Set-ItemProperty -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services' -Name "bUseHardwareGraphicsAdapter" -Value 0 -Force
+          # Melhora a taxa de atualização de imagem enviada para o aplicativo Windows App do Poco X6
           Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations' -Name "TurnOnContinuousUpdates" -Value 1 -Force
+          # Ativa compressão de dados para a imagem carregar mais rápido na sua internet
           Set-ItemProperty -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services' -Name "MinEncryptionLevel" -Value 1 -Force
 
       - name: Create RDP User with Secure Password
