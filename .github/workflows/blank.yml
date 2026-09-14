@@ -1,4 +1,4 @@
-name: RDP_TEMPO_MAXIMO_CORRIGIDO
+name: RDP_TEMPO_MAXIMO_TAILSCALE_FIX
 
 on:
   workflow_dispatch:
@@ -6,30 +6,22 @@ on:
 jobs:
   secure-rdp:
     runs-on: windows-latest
-    # 360 minutos = 6 horas (O limite máximo absoluto que o GitHub permite de graça)
     timeout-minutes: 360
 
     steps:
       - name: Otimizar Gerenciamento de Memória para o Studio
         run: |
-          # Garante que o Windows gerencie o PageFile dinamicamente para não estourar o limite de espaço do disco do GitHub
           $ComputerSystem = Get-CimInstance -ClassName Win32_ComputerSystem
           Set-CimInstance -CimInstance $ComputerSystem -Property @{AutomaticManagedPagefile=$True}
-          
-          # Ajusta a prioridade do processador e memória para dar desempenho máximo a serviços e renderização em segundo plano (RDP)
-          # Valor 24 altera o foco do Windows Server de "aplicativos de desktop comuns" para "serviços de alto desempenho"
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\PriorityControl' -Name "Win32PrioritySeparation" -Value 24 -Force
-          
-          Write-Host "Configuração de memória otimizada e protegida contra falta de espaço!"
+          Write-Host "Memória otimizada para o Roblox Studio!"
 
       - name: Configure Core RDP Settings
         run: |
-          # Ativa o RDP e desativa o bloqueio NLA para conexões mobile
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0 -Force
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "UserAuthentication" -Value 0 -Force
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "SecurityLayer" -Value 0 -Force
 
-          # Abre as portas de comunicação rápida para o Windows App do celular
           netsh advfirewall firewall delete rule name="RDP-Tailscale-TCP" deltype=notexact
           netsh advfirewall firewall delete rule name="RDP-Tailscale-UDP" deltype=notexact
           netsh advfirewall firewall add rule name="RDP-Tailscale-TCP" dir=in action=allow protocol=TCP localport=3389
@@ -39,11 +31,8 @@ jobs:
 
       - name: Otimizar Gráficos por Software e Latência no Celular
         run: |
-          # Força o Windows a rodar aceleração via processador (WARP) de forma estável
           Set-ItemProperty -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services' -Name "bUseHardwareGraphicsAdapter" -Value 0 -Force
-          # Melhora a taxa de atualização de imagem enviada para o aplicativo Windows App do Poco X6
           Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations' -Name "TurnOnContinuousUpdates" -Value 1 -Force
-          # Ativa compressão de dados para a imagem carregar mais rápido na sua internet
           Set-ItemProperty -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services' -Name "MinEncryptionLevel" -Value 1 -Force
 
       - name: Create RDP User with Secure Password
@@ -68,23 +57,29 @@ jobs:
           
           echo "RDP_PASS=$password" >> $env:GITHUB_ENV
 
-      - name: Install Tailscale
+      - name: Install Tailscale via Chocolatey
         run: |
-          $tsUrl = "https://tailscale.com"
-          $installerPath = "$env:TEMP\tailscale.msi"
-          Invoke-WebRequest -Uri $tsUrl -OutFile $installerPath
-          Start-Process msiexec.exe -ArgumentList "/i", "`"$installerPath`"", "/quiet", "/norestart" -Wait
-          Remove-Item $installerPath -Force
+          # Instala o Tailscale de forma limpa usando o gerenciador nativo do GitHub Actions
+          choco install tailscale -y --no-progress
+          
+          # Atualiza as variáveis de ambiente na sessão atual para o Windows achar o comando imediatamente
+          $env:Path += ";C:\Program Files\Tailscale"
+          
+          # Pequena pausa para garantir que o serviço do Tailscale iniciou no Windows
+          Start-Sleep -Seconds 5
 
       - name: Establish Tailscale Connection
         run: |
-          & "$env:ProgramFiles\Tailscale\tailscale.exe" up --authkey=${{ secrets.TAILSCALE_AUTH_KEY }} --hostname=gh-runner-$env:GITHUB_RUN_ID --accept-dns=false
+          # Executa o comando atualizando o PATH local para garantir que não dê erro de arquivo não encontrado
+          $env:Path += ";C:\Program Files\Tailscale"
+          
+          tailscale up --authkey=${{ secrets.TAILSCALE_AUTH_KEY }} --hostname=gh-runner-$env:GITHUB_RUN_ID --accept-dns=false
           
           $tsIP = $null
           $retries = 0
           while (-not $tsIP -and $retries -lt 15) {
               Start-Sleep -Seconds 5
-              $tsIP = & "$env:ProgramFiles\Tailscale\tailscale.exe" ip -4
+              $tsIP = tailscale ip -4
               $retries++
           }
           
